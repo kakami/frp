@@ -17,10 +17,12 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -176,9 +178,16 @@ func (svr *Service) keepControllerWorking() {
 			if err != nil {
 				xl.Warn("reconnect to server error: %v", err)
 				time.Sleep(delayTime)
-				delayTime = delayTime * 2
-				if delayTime > maxDelayTime {
-					delayTime = maxDelayTime
+
+				opErr := &net.OpError{}
+				// quick retry for dial error
+				if errors.As(err, &opErr) && opErr.Op == "dial" {
+					delayTime = 2 * time.Second
+				} else {
+					delayTime = delayTime * 2
+					if delayTime > maxDelayTime {
+						delayTime = maxDelayTime
+					}
 				}
 				continue
 			}
@@ -215,8 +224,9 @@ func (svr *Service) login() (conn net.Conn, session *fmux.Session, err error) {
 			return
 		}
 	}
-	conn, err = frpNet.ConnectServerByProxyWithTLS(svr.cfg.HTTPProxy, svr.cfg.Protocol,
-		fmt.Sprintf("%s:%d", svr.cfg.ServerAddr, svr.cfg.ServerPort), tlsConfig)
+
+	address := net.JoinHostPort(svr.cfg.ServerAddr, strconv.Itoa(svr.cfg.ServerPort))
+	conn, err = frpNet.ConnectServerByProxyWithTLS(svr.cfg.HTTPProxy, svr.cfg.Protocol, address, tlsConfig)
 	if err != nil {
 		return
 	}

@@ -129,9 +129,9 @@ func handleSignal(svr *client.Service) {
 	close(kcpDoneCh)
 }
 
-func parseClientCommonCfg(fileType int, content string) (cfg config.ClientCommonConf, err error) {
+func parseClientCommonCfg(fileType int, source []byte) (cfg config.ClientCommonConf, err error) {
 	if fileType == CfgFileTypeIni {
-		cfg, err = parseClientCommonCfgFromIni(content)
+		cfg, err = config.UnmarshalClientConfFromIni(source)
 	} else if fileType == CfgFileTypeCmd {
 		cfg, err = parseClientCommonCfgFromCmd()
 	}
@@ -146,28 +146,19 @@ func parseClientCommonCfg(fileType int, content string) (cfg config.ClientCommon
 	return
 }
 
-func parseClientCommonCfgFromIni(content string) (config.ClientCommonConf, error) {
-	cfg, err := config.UnmarshalClientConfFromIni(content)
-	if err != nil {
-		return config.ClientCommonConf{}, err
-	}
-	return cfg, err
-}
-
 func parseClientCommonCfgFromCmd() (cfg config.ClientCommonConf, err error) {
 	cfg = config.GetDefaultClientConf()
 
-	strs := strings.Split(serverAddr, ":")
-	if len(strs) < 2 {
-		err = fmt.Errorf("invalid server_addr")
+	ipStr, portStr, err := net.SplitHostPort(serverAddr)
+	if err != nil {
+		err = fmt.Errorf("invalid server_addr: %v", err)
 		return
 	}
-	if strs[0] != "" {
-		cfg.ServerAddr = strs[0]
-	}
-	cfg.ServerPort, err = strconv.Atoi(strs[1])
+
+	cfg.ServerAddr = ipStr
+	cfg.ServerPort, err = strconv.Atoi(portStr)
 	if err != nil {
-		err = fmt.Errorf("invalid server_addr")
+		err = fmt.Errorf("invalid server_addr: %v", err)
 		return
 	}
 
@@ -192,7 +183,7 @@ func parseClientCommonCfgFromCmd() (cfg config.ClientCommonConf, err error) {
 }
 
 func runClient(cfgFilePath string) (err error) {
-	var content string
+	var content []byte
 	content, err = config.GetRenderedConfFromFile(cfgFilePath)
 	if err != nil {
 		return
@@ -203,9 +194,9 @@ func runClient(cfgFilePath string) (err error) {
 		return
 	}
 
-	pxyCfgs, visitorCfgs, err := config.LoadAllConfFromIni(cfg.User, content, cfg.Start)
+	pxyCfgs, visitorCfgs, err := config.LoadAllProxyConfsFromIni(cfg.User, content, cfg.Start)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = startService(cfg, pxyCfgs, visitorCfgs, cfgFilePath)

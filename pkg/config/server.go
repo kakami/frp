@@ -22,6 +22,7 @@ import (
 	plugin "github.com/fatedier/frp/pkg/plugin/server"
 	"github.com/fatedier/frp/pkg/util/util"
 
+	"github.com/go-playground/validator/v10"
 	"gopkg.in/ini.v1"
 )
 
@@ -29,38 +30,38 @@ import (
 // recommended to use GetDefaultServerConf instead of creating this object
 // directly, so that all unspecified fields have reasonable default values.
 type ServerCommonConf struct {
-	auth.ServerConfig `ini:",extends" json:"inline"`
+	auth.ServerConfig `ini:",extends"`
 
 	// BindAddr specifies the address that the server binds to. By default,
 	// this value is "0.0.0.0".
 	BindAddr string `ini:"bind_addr" json:"bind_addr"`
 	// BindPort specifies the port that the server listens on. By default, this
 	// value is 7000.
-	BindPort int `ini:"bind_port" json:"bind_port"`
+	BindPort int `ini:"bind_port" json:"bind_port" validate:"gte=0,lte=65535"`
 	// BindUDPPort specifies the UDP port that the server listens on. If this
 	// value is 0, the server will not listen for UDP connections. By default,
 	// this value is 0
-	BindUDPPort int `ini:"bind_udp_port" json:"bind_udp_port"`
+	BindUDPPort int `ini:"bind_udp_port" json:"bind_udp_port" validate:"gte=0,lte=65535"`
 	// KCPBindPort specifies the KCP port that the server listens on. If this
 	// value is 0, the server will not listen for KCP connections. By default,
 	// this value is 0.
-	KCPBindPort int `ini:"kcp_bind_port" json:"kcp_bind_port"`
+	KCPBindPort int `ini:"kcp_bind_port" json:"kcp_bind_port" validate:"gte=0,lte=65535"`
 	// ProxyBindAddr specifies the address that the proxy binds to. This value
-	// may be the same as BindAddr. By default, this value is "0.0.0.0".
+	// may be the same as BindAddr.
 	ProxyBindAddr string `ini:"proxy_bind_addr" json:"proxy_bind_addr"`
 	// VhostHTTPPort specifies the port that the server listens for HTTP Vhost
 	// requests. If this value is 0, the server will not listen for HTTP
 	// requests. By default, this value is 0.
-	VhostHTTPPort int `ini:"vhost_http_port" json:"vhost_http_port"`
+	VhostHTTPPort int `ini:"vhost_http_port" json:"vhost_http_port" validate:"gte=0,lte=65535"`
 	// VhostHTTPSPort specifies the port that the server listens for HTTPS
 	// Vhost requests. If this value is 0, the server will not listen for HTTPS
 	// requests. By default, this value is 0.
-	VhostHTTPSPort int `ini:"vhost_https_port" json:"vhost_https_port"`
+	VhostHTTPSPort int `ini:"vhost_https_port" json:"vhost_https_port" validate:"gte=0,lte=65535"`
 	// TCPMuxHTTPConnectPort specifies the port that the server listens for TCP
 	// HTTP CONNECT requests. If the value is 0, the server will not multiplex TCP
 	// requests on one single port. If it's not - it will listen on this value for
 	// HTTP CONNECT requests. By default, this value is 0.
-	TCPMuxHTTPConnectPort int `ini:"tcpmux_httpconnect_port" json:"tcpmux_httpconnect_port"`
+	TCPMuxHTTPConnectPort int `ini:"tcpmux_httpconnect_port" json:"tcpmux_httpconnect_port" validate:"gte=0,lte=65535"`
 	// VhostHTTPTimeout specifies the response header timeout for the Vhost
 	// HTTP server, in seconds. By default, this value is 60.
 	VhostHTTPTimeout int64 `ini:"vhost_http_timeout" json:"vhost_http_timeout"`
@@ -70,12 +71,12 @@ type ServerCommonConf struct {
 	// DashboardPort specifies the port that the dashboard listens on. If this
 	// value is 0, the dashboard will not be started. By default, this value is
 	// 0.
-	DashboardPort int `ini:"dashboard_port" json:"dashboard_port"`
+	DashboardPort int `ini:"dashboard_port" json:"dashboard_port" validate:"gte=0,lte=65535"`
 	// DashboardUser specifies the username that the dashboard will use for
-	// login. By default, this value is "admin".
+	// login.
 	DashboardUser string `ini:"dashboard_user" json:"dashboard_user"`
-	// DashboardUser specifies the password that the dashboard will use for
-	// login. By default, this value is "admin".
+	// DashboardPwd specifies the password that the dashboard will use for
+	// login.
 	DashboardPwd string `ini:"dashboard_pwd" json:"dashboard_pwd"`
 	// EnablePrometheus will export prometheus metrics on {dashboard_addr}:{dashboard_port}
 	// in /metrics api.
@@ -174,15 +175,15 @@ func GetDefaultServerConf() ServerCommonConf {
 		BindPort:               7000,
 		BindUDPPort:            0,
 		KCPBindPort:            0,
-		ProxyBindAddr:          "0.0.0.0",
+		ProxyBindAddr:          "",
 		VhostHTTPPort:          0,
 		VhostHTTPSPort:         0,
 		TCPMuxHTTPConnectPort:  0,
 		VhostHTTPTimeout:       60,
 		DashboardAddr:          "0.0.0.0",
 		DashboardPort:          0,
-		DashboardUser:          "admin",
-		DashboardPwd:           "admin",
+		DashboardUser:          "",
+		DashboardPwd:           "",
 		EnablePrometheus:       false,
 		AssetsDir:              "",
 		LogFile:                "console",
@@ -208,10 +209,6 @@ func GetDefaultServerConf() ServerCommonConf {
 	}
 }
 
-func (cfg *ServerCommonConf) Check() error {
-	return nil
-}
-
 func UnmarshalServerConfFromIni(source interface{}) (ServerCommonConf, error) {
 
 	f, err := ini.LoadSources(ini.LoadOptions{
@@ -227,7 +224,6 @@ func UnmarshalServerConfFromIni(source interface{}) (ServerCommonConf, error) {
 
 	s, err := f.GetSection("common")
 	if err != nil {
-		// TODO: add error info
 		return ServerCommonConf{}, err
 	}
 
@@ -242,7 +238,7 @@ func UnmarshalServerConfFromIni(source interface{}) (ServerCommonConf, error) {
 	if allowPortStr != "" {
 		allowPorts, err := util.ParseRangeNumbers(allowPortStr)
 		if err != nil {
-			return ServerCommonConf{}, fmt.Errorf("Parse conf error: allow_ports: %v", err)
+			return ServerCommonConf{}, fmt.Errorf("invalid allow_ports: %v", err)
 		}
 		for _, port := range allowPorts {
 			common.AllowPorts[int(port)] = struct{}{}
@@ -267,6 +263,26 @@ func UnmarshalServerConfFromIni(source interface{}) (ServerCommonConf, error) {
 	common.HTTPPlugins = pluginOpts
 
 	return common, nil
+}
+
+func (cfg *ServerCommonConf) Complete() {
+	if cfg.LogFile == "console" {
+		cfg.LogWay = "console"
+	} else {
+		cfg.LogWay = "file"
+	}
+
+	if cfg.ProxyBindAddr == "" {
+		cfg.ProxyBindAddr = cfg.BindAddr
+	}
+
+	if cfg.TLSTrustedCaFile != "" {
+		cfg.TLSOnly = true
+	}
+}
+
+func (cfg *ServerCommonConf) Validate() error {
+	return validator.New().Struct(cfg)
 }
 
 func loadHTTPPluginOpt(section *ini.Section) (*plugin.HTTPPluginOptions, error) {
